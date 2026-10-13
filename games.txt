@@ -1,0 +1,7 @@
+# Approved games: fingerprint, then the game name. One game per line.
+# Only games listed here can be opened through this site.
+# The name also sets the QR image file: "420 memory" -> 420-memory-qr.png
+# The maker shows the exact line to add for each new game.
+bfb41f6db787fbc5a615 Snake
+386072af9f7e074865fe Memory
+a673ce2fe6633166cdf9 420 memory

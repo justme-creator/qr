@@ -1,1 +1,99 @@
-<!DOCTYPE html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>QR game</title><script>h=location.hash.slice(1);document.write(h?atob(h.replace(/-/g,'+').replace(/_/g,'/')):'<p style="font:18px sans-serif;text-align:center;margin-top:40vh">Scan a game QR code to play.</p>')</script>
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QR games</title>
+<style>
+html,body{margin:0;height:100%;background:#1d2a5c;color:#ffc94d;font:18px system-ui,sans-serif;touch-action:manipulation}
+main{padding:32px 20px 40px;text-align:center}
+h1{font-size:28px;margin:0}
+figure{margin:28px auto 0;max-width:340px}
+figure.one{max-width:420px}
+figure img{display:block;width:100%;border-radius:12px}
+figcaption{margin-top:10px}
+a{color:inherit}
+.msg{margin:40vh 20px 0;text-align:center}
+iframe{position:fixed;inset:0;width:100%;height:100%;border:0}
+</style>
+<body>
+<main id="out"></main>
+<script>
+// QR games loader. You never need to edit this file.
+// Games travel inside QR links; this page only runs games whose fingerprint is listed in games.txt.
+(async () => {
+  const out = document.getElementById('out');
+  const say = t => { out.innerHTML = ''; const p = document.createElement('p'); p.className = 'msg'; p.textContent = t; out.append(p); };
+  const key = n => n.toLowerCase().replace(/\W+/g, '-');
+
+  async function readList() {
+    const r = await fetch('games.txt', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('no list');
+    return (await r.text()).split('\n').map(l => l.trim()).filter(l => l && l[0] !== '#')
+      .map(l => { const [fp, ...name] = l.split(/\s+/); return { fp: fp.toLowerCase(), name: name.join(' ') }; });
+  }
+
+  // A new game link opened in the same tab only changes the part after #, so reload to load it
+  addEventListener('hashchange', () => location.reload());
+  const h = location.hash.slice(1);
+
+  if (h) {
+    // 1. Unpack the game from the link
+    let code;
+    try {
+      const bin = atob((h[0] === '~' ? h.slice(1) : h).replace(/-/g, '+').replace(/_/g, '/'));
+      const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+      if (h[0] === '~') {
+        if (!window.DecompressionStream) return say('Please update your browser to play this game.');
+        code = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+      } else {
+        code = new TextDecoder().decode(bytes);
+      }
+    } catch (e) { return say('This QR code could not be read. Try scanning it again.'); }
+
+    // 2. Check its fingerprint against games.txt
+    let games;
+    try { games = await readList(); } catch (e) { return say('The games list of this site could not be loaded.'); }
+    if (!window.crypto || !crypto.subtle) return say('Please update your browser to play this game.');
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code)));
+    const fp = [...digest].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 20);
+    const game = games.find(g => g.fp === fp);
+    if (!game) return say("This game isn't from this site, so it won't be opened.");
+
+    // 3. Run it in a sealed box: no network, no forms, no pop-ups, no access to this page
+    document.title = game.name;
+    const f = document.createElement('iframe');
+    f.setAttribute('sandbox', 'allow-scripts');
+    f.srcdoc = '<!DOCTYPE html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; font-src data:">' + code;
+    f.onload = () => f.focus();
+    document.body.replaceChildren(f);
+    return;
+  }
+
+  // No game in the link: show the QR codes listed in games.txt
+  let games;
+  try { games = await readList(); } catch (e) { return say('No games.txt found yet.'); }
+  const names = [...new Set(games.map(g => g.name).filter(Boolean))];
+  if (!names.length) return say('No games yet.');
+  const q = location.search.slice(1).toLowerCase();
+  const one = names.find(n => key(n) === q);
+  out.innerHTML = '';
+  const h1 = document.createElement('h1');
+  h1.textContent = one ? 'Scan to play ' + one : 'Scan to play';
+  out.append(h1);
+  for (const n of one ? [one] : names) {
+    const fig = document.createElement('figure');
+    if (one) fig.className = 'one';
+    const img = document.createElement('img');
+    img.src = key(n) + '-qr.png';
+    img.alt = 'QR code for ' + n;
+    const cap = document.createElement('figcaption');
+    if (one) cap.textContent = n;
+    else { const a = document.createElement('a'); a.href = '?' + key(n); a.textContent = n; cap.append(a); }
+    fig.append(img, cap);
+    out.append(fig);
+  }
+  if (one) { const p = document.createElement('p'); p.style.marginTop = '28px'; const a = document.createElement('a'); a.href = './'; a.textContent = 'All games'; p.append(a); out.append(p); }
+})();
+</script>
+</body>
+</html>
